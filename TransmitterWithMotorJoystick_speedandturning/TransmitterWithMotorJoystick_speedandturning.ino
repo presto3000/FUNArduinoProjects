@@ -5,7 +5,7 @@
 // Pin definitions for joystick
 const int vrxPin = A0;   // Analog pin for X-axis
 const int vryPin = A1;   // Analog pin for Y-axis
-const int swPin = 2;     // Digital pin for joystick button
+const int swPin = 3;     // Digital pin for joystick button
 
 // Previous motor and turn speeds to track the last set speed
 int motorSpeed = 0;
@@ -26,6 +26,12 @@ const byte address[6] = "00002";  // Address for communication
 const int tolerance = 20;  // Adjust this value as needed
 const int centerValue = 512; // Center value for joystick
 
+// Button state tracking
+bool buttonState = HIGH;    // Current button state
+bool lastButtonState = HIGH; // Previous button state
+bool toggleState = false;   // Toggle state for the button
+bool lastToggleState = false; // Last toggle state to track changes
+
 void setup() {
   Serial.begin(9600);         // Initialize serial communication for debugging
   radio.begin();              // Start the RF24 radio
@@ -38,12 +44,18 @@ void setup() {
 }
 
 void loop() {
-  // Read the X and Y analog values (range: 0 - 1023)
+    // Read the X and Y analog values (range: 0 - 1023)
   int xValue = analogRead(vrxPin);  // X-axis value
   int yValue = analogRead(vryPin);  // Y-axis value
 
   // Read the button state (pressed: LOW, not pressed: HIGH)
-  int buttonState = digitalRead(swPin);
+  lastButtonState = buttonState;  // Store the last button state
+  buttonState = digitalRead(swPin);  // Update the current button state
+
+  // Toggle button state only if it has changed from HIGH to LOW
+  if (lastButtonState == HIGH && buttonState == LOW) {
+    toggleState = !toggleState;  // Toggle the state
+  }
 
   // Target speeds for motors (forward/backward) and turning (left/right)
   int targetMotorSpeed = 0;
@@ -81,26 +93,26 @@ void loop() {
     turnSpeed = 0;   // Joystick centered horizontally
   }
 
-  // Check if we need to send data (only send if speed has changed)
-  if (motorSpeed != prevMotorSpeed || turnSpeed != prevTurnSpeed || buttonState == LOW) {
+  // Check if we need to send data (only send if speed has changed or toggle state changed)
+  if (motorSpeed != prevMotorSpeed || turnSpeed != prevTurnSpeed || (toggleState != lastToggleState)) {
     // Prepare the data to send (motor speed, turn speed, button state)
     char data[30];  // Buffer for sending data
-    snprintf(data, sizeof(data), "S:%d T:%d B:%d", motorSpeed, turnSpeed, buttonState);
+    snprintf(data, sizeof(data), "S:%d T:%d B:%d", motorSpeed, turnSpeed, toggleState ? 1 : 0);
 
     // Send data
     radio.write(&data, sizeof(data));  // Send the joystick data
     Serial.print("Message sent: ");
     Serial.println(data);  // Print the sent message for debugging
 
-    // Update previous speed values
+    // Update previous speed values and last toggle state
     prevMotorSpeed = motorSpeed;
     prevTurnSpeed = turnSpeed;
+    lastToggleState = toggleState;  // Update last toggle state after sending
   }
 
   // Small delay to prevent flooding the receiver
   delay(100);
 }
-
 // Function to gradually ramp the speed
 int rampSpeed(int currentSpeed, int targetSpeed, int step) {
   if (currentSpeed < targetSpeed) 
